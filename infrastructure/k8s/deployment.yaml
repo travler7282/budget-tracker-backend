@@ -1,0 +1,129 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: budget-tracker
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: budget-tracker-data
+  namespace: budget-tracker
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 2Gi
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: budget-tracker-backend
+  namespace: budget-tracker
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: budget-tracker-backend
+  template:
+    metadata:
+      labels:
+        app: budget-tracker-backend
+    spec:
+      containers:
+        - name: api
+          image: ghcr.io/replace-me/budget-tracker-backend:latest
+          imagePullPolicy: IfNotPresent
+          ports:
+            - containerPort: 8000
+              name: http
+          env:
+            - name: APP_HOST
+              value: 0.0.0.0
+            - name: APP_PORT
+              value: "8000"
+            - name: APP_BASE_PATH
+              value: /budget-tracker
+            - name: DATABASE_URL
+              value: sqlite:////app/data/budget_tracker.db
+            - name: JWT_SECRET_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: budget-tracker-secrets
+                  key: jwt-secret-key
+          volumeMounts:
+            - name: data
+              mountPath: /app/data
+          readinessProbe:
+            httpGet:
+              path: /api/v1/readyz
+              port: http
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          livenessProbe:
+            httpGet:
+              path: /api/v1/healthz
+              port: http
+            initialDelaySeconds: 10
+            periodSeconds: 20
+          resources:
+            requests:
+              cpu: 100m
+              memory: 128Mi
+            limits:
+              cpu: 500m
+              memory: 512Mi
+      volumes:
+        - name: data
+          persistentVolumeClaim:
+            claimName: budget-tracker-data
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: budget-tracker-backend
+  namespace: budget-tracker
+spec:
+  type: ClusterIP
+  selector:
+    app: budget-tracker-backend
+  ports:
+    - name: http
+      port: 80
+      targetPort: http
+---
+apiVersion: traefik.containo.us/v1alpha1
+kind: Middleware
+metadata:
+  name: budget-tracker-strip-prefix
+  namespace: budget-tracker
+spec:
+  stripPrefix:
+    prefixes:
+      - /budget-tracker
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: budget-tracker-backend
+  namespace: budget-tracker
+  annotations:
+    cert-manager.io/cluster-issuer: letsencrypt-prod
+    traefik.ingress.kubernetes.io/router.middlewares: budget-tracker-budget-tracker-strip-prefix@kubernetescrd
+spec:
+  ingressClassName: traefik
+  tls:
+    - hosts:
+        - <your host here>
+      secretName: <your secret name here>
+  rules:
+    - host: <your host here>
+      http:
+        paths:
+          - path: /budget-tracker
+            pathType: Prefix
+            backend:
+              service:
+                name: budget-tracker-backend
+                port:
+                  name: http
