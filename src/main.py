@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import os
-from collections import defaultdict, deque
 from collections.abc import Iterator
 from contextlib import asynccontextmanager
 from dataclasses import dataclass
@@ -9,7 +8,6 @@ from datetime import date, datetime, timedelta, timezone
 from decimal import Decimal
 from enum import Enum
 from pathlib import Path
-from threading import Lock
 from typing import Any
 
 import uvicorn
@@ -17,7 +15,7 @@ from fastapi import Depends, FastAPI, HTTPException, Request, Response, status
 from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
 from jose import JWTError, jwt
 from passlib.context import CryptContext
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 from sqlalchemy import (
     Boolean,
     Date,
@@ -27,6 +25,7 @@ from sqlalchemy import (
     Numeric,
     String,
     create_engine,
+    delete,
     func,
     inspect,
     select,
@@ -38,6 +37,7 @@ from sqlalchemy.orm import DeclarativeBase, Mapped, Session, mapped_column, rela
 BASE_DIR = Path(__file__).resolve().parent.parent
 DEFAULT_SQLITE_PATH = BASE_DIR / "budget_tracker.db"
 API_PREFIX = "/api/v1"
+APP_VERSION = "2.0.0"
 
 
 @dataclass(frozen=True)
@@ -114,8 +114,6 @@ engine = create_engine(settings.database_url, future=True, pool_pre_ping=True, c
 SessionLocal = sessionmaker(bind=engine, autoflush=False, autocommit=False, expire_on_commit=False, class_=Session)
 pwd_context = CryptContext(schemes=["pbkdf2_sha256"], deprecated="auto")
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl=f"{API_PREFIX}/auth/token")
-token_rate_limit_store: dict[str, deque[float]] = defaultdict(deque)
-token_rate_limit_lock = Lock()
 
 
 class Base(DeclarativeBase):
@@ -202,14 +200,38 @@ class AuditLogORM(Base):
     )
 
 
+class AuthRateLimitORM(Base):
+    __tablename__ = "auth_rate_limits"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
+    client_key: Mapped[str] = mapped_column(String(255), nullable=False, index=True)
+    requested_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+        default=lambda: datetime.now(timezone.utc),
+        index=True,
+    )
+
+
 class ApiModel(BaseModel):
     model_config = ConfigDict(populate_by_name=True, from_attributes=True)
+
+
+def strip_string(value: Any) -> Any:
+    if isinstance(value, str):
+        return value.strip()
+    return value
 
 
 class UserCreate(ApiModel):
     username: str = Field(min_length=3, max_length=150)
     password: str = Field(min_length=8, max_length=128)
     role: UserRole = UserRole.USER
+
+    @field_validator("username", mode="before")
+    @classmethod
+    def strip_username(cls, value: Any) -> Any:
+        return strip_string(value)
 
 
 class UserRead(ApiModel):
@@ -242,6 +264,11 @@ class BudgetItemBase(ApiModel):
     is_expense: bool | None = Field(default=None, alias="isExpense")
     is_income: bool | None = Field(default=None, alias="isIncome")
 
+    @field_validator("name", mode="before")
+    @classmethod
+    def strip_name(cls, value: Any) -> Any:
+        return strip_string(value)
+
 
 class BudgetItemCreate(BudgetItemBase):
     pass
@@ -262,6 +289,11 @@ class BudgetItemUpdate(ApiModel):
     is_loan: bool | None = Field(default=None, alias="isLoan")
     is_expense: bool | None = Field(default=None, alias="isExpense")
     is_income: bool | None = Field(default=None, alias="isIncome")
+
+    @field_validator("name", mode="before")
+    @classmethod
+    def strip_name(cls, value: Any) -> Any:
+        return strip_string(value)
 
 
 class BudgetItemRead(ApiModel):
@@ -318,24 +350,31 @@ def to_utc(dt: datetime | None) -> datetime | None:
     return dt.astimezone(timezone.utc)
 
 
-def check_token_rate_limit(client_key: str) -> None:
-    now = datetime.now(timezone.utc).timestamp()
-    cutoff = now - settings.auth_rate_limit_window_seconds
+def check_token_rate_limit(db: Session, client_key: str) -> None:
+    now = datetime.now(timezone.utc)
+    cutoff = now - timedelta(seconds=settings.auth_rate_limit_window_seconds)
 
-    with token_rate_limit_lock:
-        requests = token_rate_limit_store[client_key]
-        while requests and requests[0] < cutoff:
-            requests.popleft()
+    db.execute(delete(AuthRateLimitORM).where(AuthRateLimitORM.requested_at < cutoff))
+    recent_requests = db.scalars(
+        select(AuthRateLimitORM.requested_at)
+        .where(AuthRateLimitORM.client_key == client_key)
+        .where(AuthRateLimitORM.requested_at >= cutoff)
+        .order_by(AuthRateLimitORM.requested_at)
+    ).all()
 
-        if len(requests) >= settings.auth_rate_limit_max_requests:
-            retry_after_seconds = max(1, int(requests[0] + settings.auth_rate_limit_window_seconds - now))
-            raise HTTPException(
-                status_code=status.HTTP_429_TOO_MANY_REQUESTS,
-                detail="Too many login attempts from this client. Please try again later.",
-                headers={"Retry-After": str(retry_after_seconds)},
-            )
+    if len(recent_requests) >= settings.auth_rate_limit_max_requests:
+        oldest_request = to_utc(recent_requests[0]) or now
+        retry_at = oldest_request + timedelta(seconds=settings.auth_rate_limit_window_seconds)
+        retry_after_seconds = max(1, int((retry_at - now).total_seconds()))
+        db.commit()
+        raise HTTPException(
+            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+            detail="Too many login attempts from this client. Please try again later.",
+            headers={"Retry-After": str(retry_after_seconds)},
+        )
 
-        requests.append(now)
+    db.add(AuthRateLimitORM(client_key=client_key, requested_at=now))
+    db.commit()
 
 
 def register_failed_login_attempt(db: Session, user: UserORM) -> None:
@@ -526,7 +565,7 @@ def initialize_database() -> None:
 
 
 def ensure_bootstrap_admin() -> None:
-    username = settings.bootstrap_admin_username
+    username = settings.bootstrap_admin_username.strip() if settings.bootstrap_admin_username else None
     password = settings.bootstrap_admin_password
     if not username and not password:
         return
@@ -599,7 +638,7 @@ async def lifespan(_: FastAPI):
 
 app = FastAPI(
     title="Budget Tracker API",
-    version="2.0.0",
+    version=APP_VERSION,
     lifespan=lifespan,
     contact={"name": "Budget Tracker API"},
     root_path=settings.app_base_path,
@@ -658,7 +697,7 @@ async def register(
 ) -> UserRead:
     require_auth_configured()
     db_user = UserORM(
-        username=user.username.strip(),
+        username=user.username,
         hashed_password=get_password_hash(user.password),
         role=user.role.value,
         is_active=True,
@@ -689,9 +728,10 @@ async def login(
 ) -> Token:
     require_auth_configured()
     client_host = request.client.host if request.client else "unknown"
-    check_token_rate_limit(client_host)
+    check_token_rate_limit(db, client_host)
 
-    user = db.scalar(select(UserORM).where(UserORM.username == form_data.username))
+    username = form_data.username.strip()
+    user = db.scalar(select(UserORM).where(UserORM.username == username))
     if user is not None:
         ensure_user_not_locked(user)
     if user is None or not verify_password(form_data.password, user.hashed_password):
@@ -783,7 +823,7 @@ async def create_budget_item(
 ) -> BudgetItemRead:
     db_item = BudgetItemORM(
         owner_id=current_user.id,
-        name=payload.name.strip(),
+        name=payload.name,
         description=payload.description,
         category=payload.category,
         item_type=derive_item_type(payload).value,
@@ -811,7 +851,7 @@ async def update_budget_item(
     update_data = payload.model_dump(exclude_unset=True, by_alias=False)
 
     if "name" in update_data and update_data["name"] is not None:
-        db_item.name = update_data["name"].strip()
+        db_item.name = update_data["name"]
     if "description" in update_data:
         db_item.description = update_data["description"]
     if "category" in update_data:

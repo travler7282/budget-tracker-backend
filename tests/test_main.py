@@ -131,6 +131,30 @@ def test_register_writes_audit_log(monkeypatch, tmp_path):
     main.engine.dispose()
 
 
+def test_register_trims_and_rejects_blank_usernames(monkeypatch, tmp_path):
+    main = load_main_module(monkeypatch, tmp_path)
+
+    with TestClient(main.app) as client:
+        admin_headers = login_headers(client, "admin", "admin-password")
+
+        blank_response = client.post(
+            "/api/v1/auth/register",
+            headers=admin_headers,
+            json={"username": "   ", "password": "super-secret"},
+        )
+        assert blank_response.status_code == 422
+
+        create_response = client.post(
+            "/api/v1/auth/register",
+            headers=admin_headers,
+            json={"username": "  trimmed-user  ", "password": "super-secret"},
+        )
+        assert create_response.status_code == 201
+        assert create_response.json()["username"] == "trimmed-user"
+
+    main.engine.dispose()
+
+
 def test_login_lockout_after_failed_attempts(monkeypatch, tmp_path):
     monkeypatch.setenv("AUTH_LOCKOUT_THRESHOLD", "2")
     monkeypatch.setenv("AUTH_LOCKOUT_SECONDS", "120")
@@ -187,6 +211,24 @@ def test_login_rate_limit(monkeypatch, tmp_path):
     main.engine.dispose()
 
 
+def test_login_rate_limit_is_written_to_database(monkeypatch, tmp_path):
+    monkeypatch.setenv("AUTH_RATE_LIMIT_MAX_REQUESTS", "20")
+    main = load_main_module(monkeypatch, tmp_path)
+
+    with TestClient(main.app) as client:
+        response = client.post(
+            "/api/v1/auth/token",
+            data={"username": "missing-user", "password": "wrong-password"},
+        )
+        assert response.status_code == 401
+
+    with main.SessionLocal() as session:
+        stored_attempts = session.query(main.AuthRateLimitORM).count()
+        assert stored_attempts == 1
+
+    main.engine.dispose()
+
+
 def test_budget_item_crud_and_summary(monkeypatch, tmp_path):
     main = load_main_module(monkeypatch, tmp_path)
 
@@ -229,6 +271,46 @@ def test_budget_item_crud_and_summary(monkeypatch, tmp_path):
 
         delete_response = client.delete(f"/api/v1/budget-items/{item['id']}", headers=headers)
         assert delete_response.status_code == 204
+
+    main.engine.dispose()
+
+
+def test_budget_item_names_are_trimmed_and_blank_names_are_rejected(monkeypatch, tmp_path):
+    main = load_main_module(monkeypatch, tmp_path)
+
+    with TestClient(main.app) as client:
+        headers = login_headers(client, "admin", "admin-password")
+
+        blank_create = client.post(
+            "/api/v1/budget-items",
+            headers=headers,
+            json={"name": "   ", "itemType": "expense", "budgetedAmount": "20.00"},
+        )
+        assert blank_create.status_code == 422
+
+        create_response = client.post(
+            "/api/v1/budget-items",
+            headers=headers,
+            json={"name": "  Rent  ", "itemType": "expense", "budgetedAmount": "1200.00"},
+        )
+        assert create_response.status_code == 201
+        item = create_response.json()
+        assert item["name"] == "Rent"
+
+        blank_update = client.patch(
+            f"/api/v1/budget-items/{item['id']}",
+            headers=headers,
+            json={"name": "   "},
+        )
+        assert blank_update.status_code == 422
+
+        update_response = client.patch(
+            f"/api/v1/budget-items/{item['id']}",
+            headers=headers,
+            json={"name": "  Rent payment  "},
+        )
+        assert update_response.status_code == 200
+        assert update_response.json()["name"] == "Rent payment"
 
     main.engine.dispose()
 

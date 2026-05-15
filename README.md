@@ -5,12 +5,13 @@ FastAPI backend for managing budget items with JWT authentication, SQLAlchemy-ba
 ## Features
 
 - Auth endpoints for registration, token issuance, and current-user lookup.
-- Token endpoint rate limiting to reduce brute-force attempts.
+- Database-backed token endpoint rate limiting to reduce brute-force attempts across app processes.
 - Login lockout/backoff after repeated failed password attempts.
 - Audit logging for admin-driven user creation.
 - CRUD endpoints for budget items at `/api/v1/budget-items`.
 - Budget item typing via `itemType` with compatibility flags such as `isLoan`, `isExpense`, and `isCreditCard`.
 - Health and readiness endpoints at `/api/v1/healthz` and `/api/v1/readyz`.
+- Alembic migrations for schema changes.
 - Environment-driven configuration for secrets, database path, ingress base path, and optional TLS.
 
 ## Environment Variables
@@ -160,6 +161,22 @@ pytest
 coverage run -m pytest
 coverage report -m
 ruff check .
+```
+
+## Database Migrations
+
+The app still creates missing tables on startup for local convenience, but schema changes should be managed through Alembic.
+
+Run migrations against the configured database:
+
+```bash
+alembic upgrade head
+```
+
+Create a new migration after changing SQLAlchemy models:
+
+```bash
+alembic revision --autogenerate -m "describe change"
 ```
 
 ## API Summary
