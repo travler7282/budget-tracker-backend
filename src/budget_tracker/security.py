@@ -16,7 +16,7 @@ from budget_tracker.models import UserORM, UserRole
 from budget_tracker.schemas import Token
 
 pwd_context = CryptContext(schemes=["pbkdf2_sha256"], deprecated="auto")
-oauth2_scheme = OAuth2PasswordBearer(tokenUrl=f"{config.API_PREFIX.lstrip('/')}/auth/token")
+oauth2_scheme = OAuth2PasswordBearer(tokenUrl=f"{config.settings.app_base_path}{config.API_PREFIX}/auth/token")
 
 
 def get_password_hash(password: str) -> str:
