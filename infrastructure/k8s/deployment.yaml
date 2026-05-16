@@ -129,6 +129,8 @@ spec:
               value: "8000"
             - name: APP_BASE_PATH
               value: /budget-tracker
+            - name: CORS_ALLOWED_ORIGINS
+              value: https://api.travler7282.com
             - name: DATABASE_URL
               valueFrom:
                 secretKeyRef:

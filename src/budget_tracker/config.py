@@ -29,6 +29,7 @@ class Settings:
     tls_key_file: str | None
     tls_ca_file: str | None
     app_base_path: str
+    cors_allowed_origins: list[str]
 
     @property
     def auth_ready(self) -> bool:
@@ -57,6 +58,9 @@ def normalize_base_path(value: str | None) -> str:
 
 
 def get_settings() -> Settings:
+    cors_origins_str = os.getenv("CORS_ALLOWED_ORIGINS", "https://api.travler7282.com")
+    cors_origins = [o.strip() for o in cors_origins_str.split(",") if o.strip()]
+    
     return Settings(
         database_url=os.getenv("DATABASE_URL", f"sqlite:///{DEFAULT_SQLITE_PATH.as_posix()}"),
         jwt_secret_key=os.getenv("JWT_SECRET_KEY") or os.getenv("SECRET_KEY"),
@@ -75,6 +79,7 @@ def get_settings() -> Settings:
         tls_key_file=os.getenv("TLS_KEY_FILE"),
         tls_ca_file=os.getenv("TLS_CA_FILE"),
         app_base_path=normalize_base_path(os.getenv("APP_BASE_PATH")),
+        cors_allowed_origins=cors_origins,
     )
 
 

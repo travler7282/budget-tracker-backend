@@ -4,6 +4,7 @@ FastAPI backend for managing budget items with JWT authentication, SQLAlchemy-ba
 
 ## Features
 
+- CORS enabled with configurable allowed origins, restricts to api.travler7282.com by default.
 - Auth endpoints for registration, token issuance, and current-user lookup.
 - Database-backed token endpoint rate limiting to reduce brute-force attempts across app processes.
 - Login lockout/backoff after repeated failed password attempts.
@@ -26,6 +27,7 @@ Set these before running the API:
 - `AUTH_LOCKOUT_SECONDS`: optional lockout/backoff duration in seconds, defaults to `300`.
 - `BOOTSTRAP_ADMIN_USERNAME`: optional username for creating or updating the first admin account at startup.
 - `BOOTSTRAP_ADMIN_PASSWORD`: optional password for the bootstrap admin account. Set this from your shell or secret store, not the repo.
+- `CORS_ALLOWED_ORIGINS`: optional comma-separated list of allowed CORS origins, defaults to `https://api.travler7282.com`. Set to `*` for development/open access (not recommended for production).
 - `DATABASE_URL`: optional, defaults to a local SQLite database file for dev/test. Use PostgreSQL for deployed environments, such as `postgresql+psycopg://budget_tracker:<password>@<host>:5432/budget_tracker`.
 - `APP_HOST`: optional, defaults to `0.0.0.0`.
 - `APP_PORT`: optional, defaults to `8000`.
