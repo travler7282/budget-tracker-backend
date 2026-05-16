@@ -1,13 +1,13 @@
 apiVersion: v1
 kind: Namespace
 metadata:
-  name: budget-tracker
+  name: default
 ---
 apiVersion: apps/v1
 kind: Deployment
 metadata:
   name: budget-tracker-backend
-  namespace: budget-tracker
+  namespace: default
 spec:
   replicas: 1
   selector:
@@ -20,7 +20,7 @@ spec:
     spec:
       containers:
         - name: api
-          image: ghcr.io/replace-me/budget-tracker-backend:latest
+          image: docker.io/travler7282/budget-tracker-backend:0.0.1
           imagePullPolicy: IfNotPresent
           ports:
             - containerPort: 8000
@@ -98,10 +98,10 @@ spec:
   ingressClassName: traefik
   tls:
     - hosts:
-        - <your host here>
-      secretName: <your secret name here>
+        - api.travler7282.com
+      secretName: budget-tracker-secrets
   rules:
-    - host: <your host here>
+    - host: api.travler7282.com
       http:
         paths:
           - path: /budget-tracker
