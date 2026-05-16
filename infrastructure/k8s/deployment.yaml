@@ -117,7 +117,7 @@ spec:
             - until nc -z budget-tracker-postgres 5432; do echo waiting for postgres; sleep 2; done
       containers:
         - name: api
-          image: docker.io/travler7282/budget-tracker-backend:0.0.4
+          image: docker.io/travler7282/budget-tracker-backend:0.0.5
           imagePullPolicy: IfNotPresent
           ports:
             - containerPort: 8000
