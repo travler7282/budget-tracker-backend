@@ -120,7 +120,11 @@ python src/main.py
 - `POST /api/v1/auth/token` is rate-limited by client source and enforces account lockout/backoff for repeated failed logins.
 - `GET /api/v1/auth/me` requires a valid bearer token.
 - `POST /api/v1/auth/register` is admin-only. Anonymous users and non-admin users cannot create accounts.
+- `PATCH /api/v1/auth/users/{user_id}` is admin-only and can update username, password, role, and active status.
+- `DELETE /api/v1/auth/users/{user_id}` is admin-only and removes a user account.
 - Admin-driven user creation is captured in the audit log table.
+- Admin-driven user updates and deletes are captured in the audit log table.
+- All API endpoints require authentication except `GET /api/v1/healthz`, `GET /api/v1/readyz`, and `POST /api/v1/auth/token`.
 - All `/api/v1/budget-items` endpoints require a valid bearer token.
 
 ## Architecture
@@ -201,6 +205,8 @@ alembic revision --autogenerate -m "describe change"
 - `POST /api/v1/auth/register`
 - `POST /api/v1/auth/token`
 - `GET /api/v1/auth/me`
+- `PATCH /api/v1/auth/users/{user_id}`
+- `DELETE /api/v1/auth/users/{user_id}`
 - `GET /api/v1/healthz`
 - `GET /api/v1/readyz`
 - `GET /api/v1/budget-items`

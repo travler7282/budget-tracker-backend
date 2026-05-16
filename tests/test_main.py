@@ -86,6 +86,9 @@ def test_budget_items_require_authentication(monkeypatch, tmp_path):
     main = load_main_module(monkeypatch, tmp_path)
 
     with TestClient(main.app) as client:
+        root_response = client.get("/")
+        assert root_response.status_code == 401
+
         response = client.get("/api/v1/budget-items")
         assert response.status_code == 401
 
@@ -128,6 +131,83 @@ def test_register_writes_audit_log(monkeypatch, tmp_path):
 
     with main.SessionLocal() as session:
         audit_count = session.query(main.AuditLogORM).filter(main.AuditLogORM.action == "user.create").count()
+        assert audit_count == 1
+
+    main.engine.dispose()
+
+
+def test_admin_can_update_user_role_and_status(monkeypatch, tmp_path):
+    main = load_main_module(monkeypatch, tmp_path)
+
+    with TestClient(main.app) as client:
+        admin_headers = login_headers(client, "admin", "admin-password")
+        create_user(client, admin_headers, "erin", "super-secret")
+        target_user_headers = login_headers(client, "erin", "super-secret")
+
+        non_admin_update = client.patch(
+            "/api/v1/auth/users/1",
+            headers=target_user_headers,
+            json={"role": "admin"},
+        )
+        assert non_admin_update.status_code == 403
+
+        with main.SessionLocal() as session:
+            target_user = session.query(main.UserORM).filter(main.UserORM.username == "erin").first()
+            assert target_user is not None
+            target_user_id = target_user.id
+
+        update_response = client.patch(
+            f"/api/v1/auth/users/{target_user_id}",
+            headers=admin_headers,
+            json={"role": "admin", "is_active": False},
+        )
+        assert update_response.status_code == 200
+        body = update_response.json()
+        assert body["role"] == "admin"
+        assert body["is_active"] is False
+
+    with main.SessionLocal() as session:
+        updated_user = session.query(main.UserORM).filter(main.UserORM.username == "erin").first()
+        assert updated_user is not None
+        assert updated_user.role == main.UserRole.ADMIN.value
+        assert updated_user.is_active is False
+        audit_count = session.query(main.AuditLogORM).filter(main.AuditLogORM.action == "user.update").count()
+        assert audit_count == 1
+
+    main.engine.dispose()
+
+
+def test_admin_can_delete_user_and_cannot_delete_self(monkeypatch, tmp_path):
+    main = load_main_module(monkeypatch, tmp_path)
+
+    with TestClient(main.app) as client:
+        admin_headers = login_headers(client, "admin", "admin-password")
+        create_user(client, admin_headers, "frank", "super-secret")
+
+        with main.SessionLocal() as session:
+            admin_user = session.query(main.UserORM).filter(main.UserORM.username == "admin").first()
+            target_user = session.query(main.UserORM).filter(main.UserORM.username == "frank").first()
+            assert admin_user is not None
+            assert target_user is not None
+            admin_id = admin_user.id
+            target_id = target_user.id
+
+        self_delete_response = client.delete(f"/api/v1/auth/users/{admin_id}", headers=admin_headers)
+        assert self_delete_response.status_code == 400
+
+        delete_response = client.delete(f"/api/v1/auth/users/{target_id}", headers=admin_headers)
+        assert delete_response.status_code == 204
+
+        login_deleted_response = client.post(
+            "/api/v1/auth/token",
+            data={"username": "frank", "password": "super-secret"},
+        )
+        assert login_deleted_response.status_code == 401
+
+    with main.SessionLocal() as session:
+        deleted_user = session.query(main.UserORM).filter(main.UserORM.username == "frank").first()
+        assert deleted_user is None
+        audit_count = session.query(main.AuditLogORM).filter(main.AuditLogORM.action == "user.delete").count()
         assert audit_count == 1
 
     main.engine.dispose()

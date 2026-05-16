@@ -38,6 +38,18 @@ class UserRead(ApiModel):
     created_at: datetime
 
 
+class UserUpdate(ApiModel):
+    username: str | None = Field(default=None, min_length=3, max_length=150)
+    password: str | None = Field(default=None, min_length=8, max_length=128)
+    role: UserRole | None = None
+    is_active: bool | None = None
+
+    @field_validator("username", mode="before")
+    @classmethod
+    def strip_username(cls, value: Any) -> Any:
+        return strip_string(value)
+
+
 class Token(ApiModel):
     access_token: str
     token_type: str = "bearer"
