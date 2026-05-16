@@ -229,6 +229,8 @@ kubectl -n budget-tracker create secret generic budget-tracker-app-secrets \
 	--from-literal=postgres-user='budget_tracker' \
 	--from-literal=postgres-password='<generate-a-strong-password>' \
 	--from-literal=postgres-db='budget_tracker' \
+	--from-literal=bootstrap-admin-username='admin' \
+	--from-literal=bootstrap-admin-password='<set-an-initial-admin-password>' \
 	--from-literal=database-url='postgresql+psycopg://budget_tracker:<generate-a-strong-password>@budget-tracker-postgres.budget-tracker.svc.cluster.local:5432/budget_tracker'
 ```
 
@@ -241,8 +243,12 @@ kubectl -n budget-tracker create secret generic budget-tracker-app-secrets \
 	--from-literal=postgres-user='budget_tracker' \
 	--from-literal=postgres-password='<generate-a-strong-password>' \
 	--from-literal=postgres-db='budget_tracker' \
+	--from-literal=bootstrap-admin-username='admin' \
+	--from-literal=bootstrap-admin-password='<set-an-initial-admin-password>' \
 	--from-literal=database-url='postgresql+psycopg://budget_tracker:<generate-a-strong-password>@budget-tracker-postgres.budget-tracker.svc.cluster.local:5432/budget_tracker'
 ```
+
+If `bootstrap-admin-username` and `bootstrap-admin-password` are present in the secret, the app will create or reset that admin user on startup. Because of that, treat those keys as bootstrap-only values: once you have confirmed the admin account works, remove or rotate them if you do not want every restart to keep resetting the same admin password.
 
 Apply the manifest:
 
@@ -257,6 +263,8 @@ postgresql+psycopg://budget_tracker:<postgres-password>@budget-tracker-postgres.
 ```
 
 Replace `<postgres-password>` with the same value you set in `budget-tracker-app-secrets`. The hostname `budget-tracker-postgres.budget-tracker.svc.cluster.local` is only reachable from inside the cluster, so the database does not need an Ingress.
+
+The bootstrap admin values map to the app environment variables `BOOTSTRAP_ADMIN_USERNAME` and `BOOTSTRAP_ADMIN_PASSWORD`.
 
 The manifest creates these PostgreSQL-related resources:
 

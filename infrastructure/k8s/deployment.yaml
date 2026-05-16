@@ -139,6 +139,18 @@ spec:
                 secretKeyRef:
                   name: budget-tracker-app-secrets
                   key: jwt-secret-key
+            - name: BOOTSTRAP_ADMIN_USERNAME
+              valueFrom:
+                secretKeyRef:
+                  name: budget-tracker-app-secrets
+                  key: bootstrap-admin-username
+                  optional: true
+            - name: BOOTSTRAP_ADMIN_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: budget-tracker-app-secrets
+                  key: bootstrap-admin-password
+                  optional: true
           readinessProbe:
             httpGet:
               path: /api/v1/readyz
