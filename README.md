@@ -213,4 +213,4 @@ alembic revision --autogenerate -m "describe change"
 
 ## Container And Kubernetes
 
-The included Dockerfile starts uvicorn against `src/main.py`, and the Kubernetes manifest under `infrastructure/k8s/deployment.yaml` is set up for k3s behind Traefik and cert-manager. The manifest expects `DATABASE_URL` and `JWT_SECRET_KEY` from the `budget-tracker-secrets` Kubernetes Secret.
+The included Dockerfile starts uvicorn against `src/main.py`, and the Kubernetes manifest under `infrastructure/k8s/deployment.yaml` is set up for k3s behind Traefik and cert-manager. The manifest expects `DATABASE_URL` and `JWT_SECRET_KEY` from the `budget-tracker-secrets` Kubernetes Secret. The deployment configures ingress using host api.travler7282.com, update this and other settings for your specific environment.
