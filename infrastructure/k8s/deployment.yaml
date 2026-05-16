@@ -130,7 +130,7 @@ spec:
             - name: APP_BASE_PATH
               value: /budget-tracker
             - name: CORS_ALLOWED_ORIGINS
-              value: https://api.travler7282.com
+              value: https://www.travler7282.com,https://api.travler7282.com
             - name: DATABASE_URL
               valueFrom:
                 secretKeyRef:

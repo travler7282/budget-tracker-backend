@@ -58,7 +58,7 @@ def normalize_base_path(value: str | None) -> str:
 
 
 def get_settings() -> Settings:
-    cors_origins_str = os.getenv("CORS_ALLOWED_ORIGINS", "https://api.travler7282.com")
+    cors_origins_str = os.getenv("CORS_ALLOWED_ORIGINS", "https://www.travler7282.com,https://api.travler7282.com")
     cors_origins = [o.strip() for o in cors_origins_str.split(",") if o.strip()]
     
     return Settings(
