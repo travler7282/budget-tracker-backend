@@ -89,6 +89,27 @@ async def read_current_user(current_user: UserORM = Depends(get_current_user)) -
     return UserRead.model_validate(current_user)
 
 
+@router.get("/users", response_model=list[UserRead])
+async def list_users(
+    db: Session = Depends(get_db_session),
+    _: UserORM = Depends(get_current_admin),
+) -> list[UserRead]:
+    users = db.scalars(select(UserORM).order_by(UserORM.id)).all()
+    return [UserRead.model_validate(u) for u in users]
+
+
+@router.get("/users/{user_id}", response_model=UserRead)
+async def get_user(
+    user_id: int,
+    db: Session = Depends(get_db_session),
+    _: UserORM = Depends(get_current_admin),
+) -> UserRead:
+    db_user = db.scalar(select(UserORM).where(UserORM.id == user_id))
+    if db_user is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
+    return UserRead.model_validate(db_user)
+
+
 @router.patch("/users/{user_id}", response_model=UserRead)
 async def update_user(
     user_id: int,

@@ -122,6 +122,8 @@ python src/main.py
 - `POST /api/v1/auth/token` is rate-limited by client source and enforces account lockout/backoff for repeated failed logins.
 - `GET /api/v1/auth/me` requires a valid bearer token.
 - `POST /api/v1/auth/register` is admin-only. Anonymous users and non-admin users cannot create accounts.
+- `GET /api/v1/auth/users` is admin-only and returns the list of all users without passwords.
+- `GET /api/v1/auth/users/{user_id}` is admin-only and returns a single user without their password.
 - `PATCH /api/v1/auth/users/{user_id}` is admin-only and can update username, password, role, and active status.
 - `DELETE /api/v1/auth/users/{user_id}` is admin-only and removes a user account.
 - Admin-driven user creation is captured in the audit log table.
@@ -207,6 +209,8 @@ alembic revision --autogenerate -m "describe change"
 - `POST /api/v1/auth/register`
 - `POST /api/v1/auth/token`
 - `GET /api/v1/auth/me`
+- `GET /api/v1/auth/users`
+- `GET /api/v1/auth/users/{user_id}`
 - `PATCH /api/v1/auth/users/{user_id}`
 - `DELETE /api/v1/auth/users/{user_id}`
 - `GET /api/v1/healthz`
