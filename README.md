@@ -213,4 +213,68 @@ alembic revision --autogenerate -m "describe change"
 
 ## Container And Kubernetes
 
-The included Dockerfile starts uvicorn against `src/main.py`, and the Kubernetes manifest under `infrastructure/k8s/deployment.yaml` is set up for k3s behind Traefik and cert-manager. The manifest expects `DATABASE_URL` and `JWT_SECRET_KEY` from the `budget-tracker-secrets` Kubernetes Secret. The deployment configures ingress using host api.travler7282.com, update this and other settings for your specific environment.
+The included Dockerfile starts uvicorn against `src/main.py`, and the Kubernetes manifest under `infrastructure/k8s/deployment.yaml` is set up for k3s behind Traefik and cert-manager. The manifest includes an in-cluster PostgreSQL deployment, a ClusterIP service for internal-only database access, and a persistent volume claim for database storage. Application credentials are intentionally not committed to the repo.
+
+Create the namespace first if it does not already exist:
+
+```bash
+kubectl create namespace budget-tracker
+```
+
+Create the application secret separately from the manifest so secrets stay out of git:
+
+```bash
+kubectl -n budget-tracker create secret generic budget-tracker-app-secrets \
+	--from-literal=jwt-secret-key='<generate-a-long-random-secret>' \
+	--from-literal=postgres-user='budget_tracker' \
+	--from-literal=postgres-password='<generate-a-strong-password>' \
+	--from-literal=postgres-db='budget_tracker' \
+	--from-literal=database-url='postgresql+psycopg://budget_tracker:<generate-a-strong-password>@budget-tracker-postgres.budget-tracker.svc.cluster.local:5432/budget_tracker'
+```
+
+If the secret already exists, replace it safely with:
+
+```bash
+kubectl -n budget-tracker delete secret budget-tracker-app-secrets
+kubectl -n budget-tracker create secret generic budget-tracker-app-secrets \
+	--from-literal=jwt-secret-key='<generate-a-long-random-secret>' \
+	--from-literal=postgres-user='budget_tracker' \
+	--from-literal=postgres-password='<generate-a-strong-password>' \
+	--from-literal=postgres-db='budget_tracker' \
+	--from-literal=database-url='postgresql+psycopg://budget_tracker:<generate-a-strong-password>@budget-tracker-postgres.budget-tracker.svc.cluster.local:5432/budget_tracker'
+```
+
+Apply the manifest:
+
+```bash
+kubectl apply -f infrastructure/k8s/deployment.yaml
+```
+
+The API should use this in-cluster PostgreSQL connection string for `DATABASE_URL`:
+
+```text
+postgresql+psycopg://budget_tracker:<postgres-password>@budget-tracker-postgres.budget-tracker.svc.cluster.local:5432/budget_tracker
+```
+
+Replace `<postgres-password>` with the same value you set in `budget-tracker-app-secrets`. The hostname `budget-tracker-postgres.budget-tracker.svc.cluster.local` is only reachable from inside the cluster, so the database does not need an Ingress.
+
+The manifest creates these PostgreSQL-related resources:
+
+- `Deployment/budget-tracker-postgres`
+- `Service/budget-tracker-postgres`
+- `PersistentVolumeClaim/budget-tracker-postgres-data`
+
+The application secret is expected to be named `budget-tracker-app-secrets`. Ingress TLS is configured to use a separate secret named `budget-tracker-tls`, which should be created and managed by cert-manager.
+
+The backend `Deployment`, `Service`, and `Ingress` are all placed in the `budget-tracker` namespace so the app and database resolve each other consistently.
+
+After deployment, you can verify database connectivity from the API pod:
+
+```bash
+kubectl -n budget-tracker get pods
+kubectl -n budget-tracker exec deploy/budget-tracker-backend -- printenv DATABASE_URL
+kubectl -n budget-tracker get svc budget-tracker-postgres
+kubectl -n budget-tracker get secret budget-tracker-app-secrets
+```
+
+The deployment still configures ingress using host `api.travler7282.com`; update that hostname for your environment before exposing the app publicly.

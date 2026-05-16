@@ -1,13 +1,102 @@
 apiVersion: v1
 kind: Namespace
 metadata:
-  name: default
+  name: budget-tracker
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: budget-tracker-postgres-data
+  namespace: budget-tracker
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 10Gi
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: budget-tracker-postgres
+  namespace: budget-tracker
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: budget-tracker-postgres
+  template:
+    metadata:
+      labels:
+        app: budget-tracker-postgres
+    spec:
+      containers:
+        - name: postgres
+          image: postgres:16
+          imagePullPolicy: IfNotPresent
+          ports:
+            - containerPort: 5432
+              name: postgres
+          env:
+            - name: POSTGRES_USER
+              valueFrom:
+                secretKeyRef:
+                  name: budget-tracker-app-secrets
+                  key: postgres-user
+            - name: POSTGRES_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: budget-tracker-app-secrets
+                  key: postgres-password
+            - name: POSTGRES_DB
+              valueFrom:
+                secretKeyRef:
+                  name: budget-tracker-app-secrets
+                  key: postgres-db
+          volumeMounts:
+            - name: postgres-data
+              mountPath: /var/lib/postgresql/data
+          readinessProbe:
+            tcpSocket:
+              port: postgres
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          livenessProbe:
+            tcpSocket:
+              port: postgres
+            initialDelaySeconds: 10
+            periodSeconds: 20
+          resources:
+            requests:
+              cpu: 100m
+              memory: 256Mi
+            limits:
+              cpu: 500m
+              memory: 512Mi
+      volumes:
+        - name: postgres-data
+          persistentVolumeClaim:
+            claimName: budget-tracker-postgres-data
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: budget-tracker-postgres
+  namespace: budget-tracker
+spec:
+  type: ClusterIP
+  selector:
+    app: budget-tracker-postgres
+  ports:
+    - name: postgres
+      port: 5432
+      targetPort: postgres
 ---
 apiVersion: apps/v1
 kind: Deployment
 metadata:
   name: budget-tracker-backend
-  namespace: default
+  namespace: budget-tracker
 spec:
   replicas: 1
   selector:
@@ -35,12 +124,12 @@ spec:
             - name: DATABASE_URL
               valueFrom:
                 secretKeyRef:
-                  name: budget-tracker-secrets
+                  name: budget-tracker-app-secrets
                   key: database-url
             - name: JWT_SECRET_KEY
               valueFrom:
                 secretKeyRef:
-                  name: budget-tracker-secrets
+                  name: budget-tracker-app-secrets
                   key: jwt-secret-key
           readinessProbe:
             httpGet:
@@ -76,7 +165,7 @@ spec:
       port: 80
       targetPort: http
 ---
-apiVersion: traefik.containo.us/v1alpha1
+apiVersion: traefik.io/v1alpha1
 kind: Middleware
 metadata:
   name: budget-tracker-strip-prefix
@@ -99,7 +188,7 @@ spec:
   tls:
     - hosts:
         - api.travler7282.com
-      secretName: budget-tracker-secrets
+      secretName: budget-tracker-tls
   rules:
     - host: api.travler7282.com
       http:
