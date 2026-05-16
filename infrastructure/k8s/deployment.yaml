@@ -3,18 +3,6 @@ kind: Namespace
 metadata:
   name: budget-tracker
 ---
-apiVersion: v1
-kind: PersistentVolumeClaim
-metadata:
-  name: budget-tracker-data
-  namespace: budget-tracker
-spec:
-  accessModes:
-    - ReadWriteOnce
-  resources:
-    requests:
-      storage: 2Gi
----
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -45,15 +33,15 @@ spec:
             - name: APP_BASE_PATH
               value: /budget-tracker
             - name: DATABASE_URL
-              value: sqlite:////app/data/budget_tracker.db
+              valueFrom:
+                secretKeyRef:
+                  name: budget-tracker-secrets
+                  key: database-url
             - name: JWT_SECRET_KEY
               valueFrom:
                 secretKeyRef:
                   name: budget-tracker-secrets
                   key: jwt-secret-key
-          volumeMounts:
-            - name: data
-              mountPath: /app/data
           readinessProbe:
             httpGet:
               path: /api/v1/readyz
@@ -73,10 +61,6 @@ spec:
             limits:
               cpu: 500m
               memory: 512Mi
-      volumes:
-        - name: data
-          persistentVolumeClaim:
-            claimName: budget-tracker-data
 ---
 apiVersion: v1
 kind: Service

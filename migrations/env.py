@@ -13,18 +13,24 @@ SRC_DIR = ROOT_DIR / "src"
 if str(SRC_DIR) not in sys.path:
     sys.path.insert(0, str(SRC_DIR))
 
-from main import Base, settings  # noqa: E402
+import budget_tracker.models  # noqa: E402,F401
+from budget_tracker import config as app_config  # noqa: E402
+from budget_tracker.database import Base  # noqa: E402
 
-config = context.config
+alembic_config = context.config
 
-if config.config_file_name is not None:
-    fileConfig(config.config_file_name)
+if alembic_config.config_file_name is not None:
+    fileConfig(alembic_config.config_file_name)
 
 target_metadata = Base.metadata
 
 
 def get_database_url() -> str:
-    return os.getenv("DATABASE_URL") or config.get_main_option("sqlalchemy.url") or settings.database_url
+    return (
+        os.getenv("DATABASE_URL")
+        or alembic_config.get_main_option("sqlalchemy.url")
+        or app_config.settings.database_url
+    )
 
 
 def run_migrations_offline() -> None:
@@ -40,7 +46,7 @@ def run_migrations_offline() -> None:
 
 
 def run_migrations_online() -> None:
-    configuration = config.get_section(config.config_ini_section, {})
+    configuration = alembic_config.get_section(alembic_config.config_ini_section, {})
     configuration["sqlalchemy.url"] = get_database_url()
 
     connectable = engine_from_config(

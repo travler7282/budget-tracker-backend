@@ -10,9 +10,10 @@ FastAPI backend for managing budget items with JWT authentication, SQLAlchemy-ba
 - Audit logging for admin-driven user creation.
 - CRUD endpoints for budget items at `/api/v1/budget-items`.
 - Budget item typing via `itemType` with compatibility flags such as `isLoan`, `isExpense`, and `isCreditCard`.
+- Cash-flow calendar endpoint for planned vs actual daily balances.
 - Health and readiness endpoints at `/api/v1/healthz` and `/api/v1/readyz`.
 - Alembic migrations for schema changes.
-- Environment-driven configuration for secrets, database path, ingress base path, and optional TLS.
+- Environment-driven configuration for secrets, database connection, ingress base path, and optional TLS.
 
 ## Environment Variables
 
@@ -25,7 +26,7 @@ Set these before running the API:
 - `AUTH_LOCKOUT_SECONDS`: optional lockout/backoff duration in seconds, defaults to `300`.
 - `BOOTSTRAP_ADMIN_USERNAME`: optional username for creating or updating the first admin account at startup.
 - `BOOTSTRAP_ADMIN_PASSWORD`: optional password for the bootstrap admin account. Set this from your shell or secret store, not the repo.
-- `DATABASE_URL`: optional, defaults to a local SQLite database file.
+- `DATABASE_URL`: optional, defaults to a local SQLite database file for dev/test. Use PostgreSQL for deployed environments, such as `postgresql+psycopg://budget_tracker:<password>@<host>:5432/budget_tracker`.
 - `APP_HOST`: optional, defaults to `0.0.0.0`.
 - `APP_PORT`: optional, defaults to `8000`.
 - `APP_RELOAD`: optional, set to `true` for local reload.
@@ -122,6 +123,22 @@ python src/main.py
 - Admin-driven user creation is captured in the audit log table.
 - All `/api/v1/budget-items` endpoints require a valid bearer token.
 
+## Architecture
+
+The app is now structured as a modular backend with service boundaries that can later become separate deployable services:
+
+- `budget_tracker.config`: environment-driven settings.
+- `budget_tracker.database`: SQLAlchemy engine, sessions, and base metadata.
+- `budget_tracker.models`: persistence models and database-owned enums.
+- `budget_tracker.schemas`: request and response contracts.
+- `budget_tracker.security`: password hashing, JWT creation, and auth dependencies.
+- `budget_tracker.services.auth`: login rate limiting, lockout/backoff, and bootstrap admin behavior.
+- `budget_tracker.services.budget_items`: budget item domain rules and conversion helpers.
+- `budget_tracker.services.cash_flow`: planned vs actual cash-flow calendar calculations.
+- `budget_tracker.api.routers`: HTTP routing for auth, budget items, health, and root metadata.
+
+SQLite is retained as the zero-setup local default. Kubernetes and production-style deployments should provide `DATABASE_URL` from a secret that points to PostgreSQL or a managed relational database.
+
 ## Run Tests
 
 ### Linux/macOS
@@ -192,7 +209,8 @@ alembic revision --autogenerate -m "describe change"
 - `POST /api/v1/budget-items`
 - `PATCH /api/v1/budget-items/{item_id}`
 - `DELETE /api/v1/budget-items/{item_id}`
+- `GET /api/v1/cash-flow/calendar`
 
 ## Container And Kubernetes
 
-The included Dockerfile starts uvicorn against `src/main.py`, and the Kubernetes manifest under `infrastructure/k8s/deployment.yaml` is set up for a single-replica SQLite deployment on k3s behind Traefik and cert-manager.
+The included Dockerfile starts uvicorn against `src/main.py`, and the Kubernetes manifest under `infrastructure/k8s/deployment.yaml` is set up for k3s behind Traefik and cert-manager. The manifest expects `DATABASE_URL` and `JWT_SECRET_KEY` from the `budget-tracker-secrets` Kubernetes Secret.

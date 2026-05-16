@@ -32,18 +32,20 @@ def load_main_module(monkeypatch, tmp_path):
     if str(SRC_DIR) not in sys.path:
         sys.path.insert(0, str(SRC_DIR))
 
-    if "main" in sys.modules:
-        del sys.modules["main"]
+    for module_name in list(sys.modules):
+        if module_name == "main" or module_name.startswith("budget_tracker"):
+            del sys.modules[module_name]
 
     module = importlib.import_module("main")
-    module = importlib.reload(module)
     return module
 
 
 def override_settings(monkeypatch, main, **overrides):
     settings_data = dict(main.settings.__dict__)
     settings_data.update(overrides)
-    monkeypatch.setattr(main, "settings", main.Settings(**settings_data))
+    new_settings = main.Settings(**settings_data)
+    monkeypatch.setattr(main.config, "settings", new_settings)
+    monkeypatch.setattr(main, "settings", new_settings)
 
 
 def login_headers(client: TestClient, username: str, password: str) -> dict[str, str]:
@@ -315,6 +317,71 @@ def test_budget_item_names_are_trimmed_and_blank_names_are_rejected(monkeypatch,
     main.engine.dispose()
 
 
+def test_cash_flow_calendar_summarizes_planned_and_actual_dates(monkeypatch, tmp_path):
+    main = load_main_module(monkeypatch, tmp_path)
+
+    with TestClient(main.app) as client:
+        headers = login_headers(client, "admin", "admin-password")
+
+        income_response = client.post(
+            "/api/v1/budget-items",
+            headers=headers,
+            json={
+                "name": "Paycheck",
+                "itemType": "income",
+                "budgetedDate": "2026-05-01",
+                "actualDate": "2026-05-01",
+                "budgetedAmount": "1000.00",
+                "actualAmount": "1100.00",
+            },
+        )
+        assert income_response.status_code == 201
+
+        expense_response = client.post(
+            "/api/v1/budget-items",
+            headers=headers,
+            json={
+                "name": "Rent",
+                "itemType": "expense",
+                "budgetedDate": "2026-05-02",
+                "actualDate": "2026-05-03",
+                "budgetedAmount": "1000.00",
+                "actualAmount": "950.00",
+            },
+        )
+        assert expense_response.status_code == 201
+
+        calendar_response = client.get(
+            "/api/v1/cash-flow/calendar",
+            headers=headers,
+            params={
+                "startDate": "2026-05-01",
+                "endDate": "2026-05-03",
+                "startingBalance": "100.00",
+            },
+        )
+        assert calendar_response.status_code == 200
+        days = calendar_response.json()["days"]
+
+        assert days[0]["plannedIncome"] == "1000.00"
+        assert days[0]["actualIncome"] == "1100.00"
+        assert days[0]["plannedBalance"] == "1100.00"
+        assert days[0]["actualBalance"] == "1200.00"
+
+        assert days[1]["plannedOutflow"] == "1000.00"
+        assert days[1]["actualOutflow"] == "0"
+        assert days[1]["plannedBalance"] == "100.00"
+        assert days[1]["actualBalance"] == "1200.00"
+
+        assert days[2]["plannedOutflow"] == "0"
+        assert days[2]["actualOutflow"] == "950.00"
+        assert days[2]["plannedBalance"] == "100.00"
+        assert days[2]["actualBalance"] == "250.00"
+        assert {item["name"] for item in days[2]["items"]} == {"Rent"}
+
+    main.engine.dispose()
+
+
 def test_item_type_flags_require_single_budget_type(monkeypatch, tmp_path):
     main = load_main_module(monkeypatch, tmp_path)
 
@@ -346,6 +413,8 @@ def test_helper_branches_for_bool_paths_and_legacy_inference(monkeypatch, tmp_pa
 
     assert main.infer_legacy_item_type("credit card payment") == main.BudgetItemType.CREDIT_CARD.value
     assert main.infer_legacy_item_type("home loan") == main.BudgetItemType.LOAN.value
+    assert main.infer_legacy_item_type("mortgage") == main.BudgetItemType.MORTGAGE.value
+    assert main.infer_legacy_item_type("student loan") == main.BudgetItemType.STUDENT_LOAN.value
     assert main.infer_legacy_item_type("salary") == main.BudgetItemType.INCOME.value
     assert main.infer_legacy_item_type("misc") == main.BudgetItemType.EXPENSE.value
 
